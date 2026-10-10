@@ -2,11 +2,10 @@
 
 每 5 分钟扫描 OKX USDT 本位永续合约，捕捉「启动」的山寨币，推送到飞书群。
 
-## 信号定义（「启动」= 今日首次突破）
+## 信号定义（「启动」= 波动放大）
 
-- 现价 > 前 5 日最高价（不含今日）
-- 且昨日尚未突破其前 5 日最高价 → 今日才首次突破（抓启动那一刻，而非连涨中的每日新高）
-- 24h 成交额 ≥ 3000 万 USDT
+- 最新一根已完成 15m K 线真实波幅 TR > 1.5 × ATR14（前 14 根 15m 平均真实波幅）
+- 24h 成交额 ≥ 1000 万 USDT（过滤低流动性杂波）
 - 仅 USDT 本位永续（instId 以 `-USDT-SWAP` 结尾）
 - 剔除稳定币（BTC/ETH 及代币化股票/商品 SNDK/SOXL/SPCX/XAU 等均纳入）
 
@@ -18,20 +17,21 @@
 ## 部署
 
 - cron：`*/5 * * * *`，no_agent，deliver → Feishu `oc_1e6a033a32e1e4a611d7013ddc4f9fdb`（与 BTC 连阳监控同群）
-- 去重：每标的每次「启动事件」只报一次，状态存 `~/.hermes/data/crypto_signals/okx_breakout_*.json`
+- 去重：每标的每根已完成 15m 柱只报一次，状态存 `~/.hermes/data/crypto_signals/okx_breakout_*.json`
 
 ## 参数（脚本顶部）
 
 | 参数 | 值 | 说明 |
 |---|---|---|
-| `MIN_VOL_USDT` | 30_000_000 | 24h 成交额下限（USDT） |
-| `BREAKOUT_DAYS` | 5 | 创 N 日新高 |
-| `CANDLE_LIMIT` | 7 | 日线根数（今日+昨日+前5日+冗余） |
+| `MIN_VOL_USDT` | 10_000_000 | 24h 成交额下限（USDT） |
+| `BAR` | 15m | K 线周期 |
+| `ATR_MULT` | 1.5 | 波动放大倍数（TR > 1.5×ATR14） |
+| `ATR_PERIOD` | 14 | ATR 周期（前 N 根） |
 | `EXCLUDE_BASE` | 稳定币 | 剔除名单 |
 
 ## 速率与限频
 
-每 5 分钟：1 次 tickers + 约 106 次日线请求 ≈ 0.36 req/s，远低于 OKX 公共接口 20 req/2s 限频，无封号风险。
+每 5 分钟：1 次 tickers + 约 60 次 15m 请求 ≈ 0.2 req/s，远低于 OKX 公共接口 20 req/2s 限频，无封号风险。
 
 ## 看板（Dashboard）
 

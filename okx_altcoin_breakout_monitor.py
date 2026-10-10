@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
-"""OKX 山寨币启动扫描（5日新高 + 24h成交额>3000万USDT 的 USDT 永续合约）。
+"""OKX 山寨币启动扫描（15m 波动放大 + 24h成交额>1000万USDT 的 USDT 永续合约）。
 
-信号定义（"启动"= 今日首次突破）：
-  - 现价 last > 前5日最高价（不含今日，data[1:6] 的 high 最大值）
-  - 且昨日 high 未超过"昨日的前5日最高价"（data[2:7]），即昨日尚未启动、
-    今日才首次突破 → 抓的是启动那一刻，不是连续上涨中的每日新高。
+信号定义（"启动" = 波动突然放大）：
+  - 最新一根已完成 15m K 线的真实波幅 TR > ATR_MULT × ATR14
+    （ATR14 = 前 14 根已完成 15m 柱的平均真实波幅）
+  - 且 24h 成交额 volCcy24h × 现价 > 10_000_000 USDT（过滤低流动性的杂波）
 
 过滤：
   - 仅 USDT 本位永续（instId 以 -USDT-SWAP 结尾）
-  - 剔除稳定币（USDT/USDC/DAI 等，含 BTC/ETH 在内的其余币种都扫）
-  - 24h 成交额 volCcy24h × 现价 >= 30_000_000 USDT（volCcy24h 是币数，非 USDT）
+  - 剔除稳定币（USDT/USDC/DAI 等；BTC/ETH 及代币化股票/商品均纳入）
 
-去重：每标的每"启动事件"只报一次（last_alert_date 状态文件 + freshness 门槛）。
+去重：每标的每根已完成 15m 柱只报一次（last_alert_bar_ts 状态文件）。
 纯标准库 requests+json；stdout 输出信号行，无信号=空输出=不投递(no_agent cron watchdog)。
 """
 from __future__ import annotations
@@ -32,9 +31,11 @@ CANDLES_URL = "https://www.okx.com/api/v5/market/candles"
 STATE_DIR = Path.home() / ".hermes" / "data" / "crypto_signals"
 
 # ── 参数 ──────────────────────────────────────────────────────────────────
-MIN_VOL_USDT = 30_000_000   # 24h 成交额下限（USDT）
-BREAKOUT_DAYS = 5           # 创 N 日新高
-CANDLE_LIMIT = 7            # 日线根数（今日 + 昨日 + 前5日 + 昨日的1日冗余）
+MIN_VOL_USDT = 10_000_000   # 24h 成交额下限（USDT）
+BAR = "15m"                 # K 线周期
+ATR_MULT = 1.5              # 波动放大倍数（当下 TR > ATR_MULT × ATR14）
+ATR_PERIOD = 14             # ATR 周期（前 N 根已完成柱）
+CANDLE_LIMIT = ATR_PERIOD + 2   # 15m 柱数（当前未完成 + 最新已完成 + ATR周期 + 1 根前收）
 EXCLUDE_BASE = {"USDT", "USDC", "DAI", "TUSD", "BUSD", "FDUSD",
                 "USDP", "USD1", "AEUR", "EURT"}
 HEADERS = {"User-Agent": "okx-altcoin-breakout-monitor/1.0"}
@@ -54,9 +55,9 @@ def fetch_tickers() -> list[dict]:
     return p.get("data") or []
 
 
-def fetch_daily_candles(inst_id: str) -> list[list]:
+def fetch_candles(inst_id: str) -> list[list]:
     r = _SESSION.get(CANDLES_URL,
-                     params={"instId": inst_id, "bar": "1D",
+                     params={"instId": inst_id, "bar": BAR,
                              "limit": str(CANDLE_LIMIT)},
                      headers=HEADERS, timeout=20)
     r.raise_for_status()
@@ -66,15 +67,24 @@ def fetch_daily_candles(inst_id: str) -> list[list]:
     return p.get("data") or []   # 最新在前
 
 
-def max_high(candles: list[list], lo: int, hi: int) -> float | None:
-    """candles[lo:hi] 的最高价（hi 不含）。"""
-    vals = []
-    for c in candles[lo:hi]:
-        try:
-            vals.append(float(c[2]))
-        except (IndexError, ValueError, TypeError):
-            continue
-    return max(vals) if vals else None
+def true_range(candles: list[list], i: int) -> float:
+    hi = float(candles[i][2])
+    lo = float(candles[i][3])
+    prev_close = float(candles[i + 1][4])
+    return max(hi - lo, abs(hi - prev_close), abs(lo - prev_close))
+
+
+def atr_expansion(candles: list[list]):
+    """最新已完成 15m 柱 TR 相对 ATR14 的放大。返回 (ratio, bar_ts) 或 None。"""
+    if len(candles) < CANDLE_LIMIT:
+        return None
+    trs = [true_range(candles, i) for i in range(1, 1 + ATR_PERIOD)]
+    latest_tr = trs[0]
+    atr14 = sum(trs) / len(trs)
+    if atr14 <= 0:
+        return None
+    bar_ts = int(candles[1][0]) // 1000   # 最新已完成柱的开盘时间（epoch s）
+    return (latest_tr / atr14, bar_ts)
 
 
 def load_state(sym: str) -> dict:
@@ -111,11 +121,10 @@ def fmt_vol(v: float) -> str:
 
 def format_signal(sig: dict) -> str:
     sym = sig["base"]
-    lines = [f"【山寨启动】{sym} 创{BREAKOUT_DAYS}日新高"]
+    lines = [f"【山寨启动】{sym} 15m波动放大"]
     lines.append(f"现价 {fmt_num(sig['last'])} USDT（24h {sig['chg_24h'] * 100:+.2f}%）")
+    lines.append(f"ATR放大 {sig['atr_ratio']:.2f}×（当前TR / ATR{ATR_PERIOD}）")
     lines.append(f"24h成交额 {fmt_vol(sig['vol_usdt'])} USDT")
-    lines.append(f"突破前{BREAKOUT_DAYS}日高点 +{sig['breakout_pct'] * 100:.2f}%"
-                 f"（前高 {fmt_num(sig['prior_high'])})")
     lines.append(f"时间 {sig['cst_time']}（北京）")
     return "\n".join(lines)
 
@@ -123,7 +132,7 @@ def format_signal(sig: dict) -> str:
 def main() -> int:
     if "--selftest" in sys.argv:
         print("【山寨启动扫描·投递测试】收到此消息即表示飞书群投递正常。"
-              f"策略：USDT永续，现价创{BREAKOUT_DAYS}日新高且昨日未启动，"
+              f"策略：USDT永续，15m当前TR>{ATR_MULT}xATR{ATR_PERIOD}且"
               f"24h成交额≥{MIN_VOL_USDT / 1e6:.0f}M USDT，剔除稳定币。")
         return 0
 
@@ -135,7 +144,6 @@ def main() -> int:
         return 1
 
     now = datetime.now(CST)
-    today_str = now.strftime("%Y-%m-%d")
     cst_time = now.strftime("%m-%d %H:%M")
 
     candidates = []
@@ -164,53 +172,39 @@ def main() -> int:
     emitted = 0
     for c in candidates:
         try:
-            candles = fetch_daily_candles(c["inst_id"])
+            candles = fetch_candles(c["inst_id"])
         except Exception as e:
             print(json.dumps({"inst_id": c["inst_id"], "status": "candle_fetch_failed",
                               "error": str(e)}, ensure_ascii=False), file=sys.stderr)
             continue
-        if len(candles) < CANDLE_LIMIT:
+        r = atr_expansion(candles)
+        if r is None:
+            continue
+        ratio, bar_ts = r
+        if ratio <= ATR_MULT:
             continue
 
-        prior_5d_high = max_high(candles, 1, 1 + BREAKOUT_DAYS)   # 昨日至前5日
-        yday_prior_5d_high = max_high(candles, 2, 2 + BREAKOUT_DAYS)  # 昨日的前5日
-        if prior_5d_high is None or yday_prior_5d_high is None:
-            continue
-        try:
-            yday_high = float(candles[1][2])
-        except (IndexError, ValueError, TypeError):
-            continue
-
-        # 今日突破 + 昨日尚未突破（freshness 门槛 = "启动"而非连涨中的每日新高）
-        today_breakout = c["last"] > prior_5d_high
-        yday_not_breakout = yday_high <= yday_prior_5d_high
-        if not (today_breakout and yday_not_breakout):
-            continue
-
-        # 去重：同一"启动事件"只报一次（同日状态兜底）
+        # 去重：同一根已完成 15m 柱只报一次
         state = load_state(c["base"])
-        if state.get("last_alert_date") == today_str:
+        if state.get("last_alert_bar_ts") == bar_ts:
             continue
 
         chg_24h = (c["last"] - c["open24h"]) / c["open24h"] if c["open24h"] > 0 else 0.0
-        breakout_pct = (c["last"] - prior_5d_high) / prior_5d_high
         sig = {
             "base": c["base"],
             "inst_id": c["inst_id"],
             "last": c["last"],
             "vol_usdt": c["vol_usdt"],
             "chg_24h": chg_24h,
-            "prior_high": prior_5d_high,
-            "breakout_pct": breakout_pct,
+            "atr_ratio": ratio,
             "cst_time": cst_time,
         }
         print(format_signal(sig))
         emitted += 1
-        save_state(c["base"], {"last_alert_date": today_str,
+        save_state(c["base"], {"last_alert_bar_ts": bar_ts,
                                "last_alert_ts": int(now.timestamp()),
-                               "inst_id": c["inst_id"],
-                               "prior_high": prior_5d_high})
-        # 记入信号台账（供网页看板追踪 4h/8h/12h/当下收益）
+                               "inst_id": c["inst_id"]})
+        # 记入信号台账（供网页看板追踪 4h/8h/12h/当下收益率）
         append_signal({
             "symbol": c["base"],
             "inst_id": c["inst_id"],
@@ -218,8 +212,7 @@ def main() -> int:
             "entry_price": c["last"],
             "vol_usdt": c["vol_usdt"],
             "chg_24h": chg_24h,
-            "prior_high": prior_5d_high,
-            "breakout_pct": breakout_pct,
+            "atr_ratio": ratio,
         })
 
     return 0
