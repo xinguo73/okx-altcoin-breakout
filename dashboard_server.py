@@ -213,8 +213,8 @@ def _week_section(wk, signals, idx, active):
   <h2>{label} <span class="wkid">{wk}</span> <span class="cnt">{len(signals)} 个信号</span></h2>
   <table>
     <thead><tr>
-      <th>币</th><th>启动时间</th><th>启动价格</th><th>当前价格</th><th>RS</th>
-      <th>+4h收益率</th><th>+8h收益率</th><th>+12h收益率</th><th>当下收益率</th>
+      <th>币</th><th>启动时间</th><th class="num">启动价格</th><th class="num">当前价格</th><th class="num">RS</th>
+      <th class="num">+4h收益率</th><th class="num">+8h收益率</th><th class="num">+12h收益率</th><th class="num">当下收益率</th>
     </tr></thead>
     <tbody>{rows}</tbody>
   </table>
@@ -441,6 +441,8 @@ def render_html(ledger: dict) -> str:
     weeks: dict[str, list] = {}
     for s in signals:
         weeks.setdefault(s.get("week") or week_key(s["signal_ts"]), []).append(s)
+    for k in weeks:
+        weeks[k].sort(key=lambda s: s["signal_ts"], reverse=True)   # 时间倒序，近期的在前
     week_keys = sorted(weeks.keys(), reverse=True)
 
     stats = _stats_block(signals)
