@@ -247,6 +247,11 @@ CSS = """
   .rs-strong { color: #2ecc71; font-weight: 600; }
   .rs-mid { color: #d9b64a; }
   .rs-weak { color: #ff5c5c; }
+  .toggle-strong { background: #1b2233; color: #aab2c5; border: 1px solid #2a3247;
+                   padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 12px;
+                   margin-left: 8px; vertical-align: middle; }
+  .toggle-strong.active { background: #2ecc71; color: #0f1420; border-color: #2ecc71; }
+  body.strong-only tr.clickable:not(.strong) { display: none; }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
   .pos { color: #2ecc71; }
   .neg { color: #ff5c5c; }
@@ -403,9 +408,20 @@ function show(i) {
   weeks.forEach(function (w, n) { w.style.display = (n === i) ? 'block' : 'none'; });
   try { localStorage.setItem('okx_tab', String(i)); } catch (e) {}
 }
+function toggleStrong() {
+  var btn = document.getElementById('toggleStrongBtn');
+  var on = document.body.classList.toggle('strong-only');
+  if (btn) { btn.classList.toggle('active', on); btn.textContent = on ? '只看强势 ✓' : '只看强势'; }
+  try { localStorage.setItem('okx_strong_only', on ? '1' : '0'); } catch (e) {}
+}
 try {
   var _t = parseInt(localStorage.getItem('okx_tab') || '0', 10);
   show(_t);
+  if (localStorage.getItem('okx_strong_only') === '1') {
+    document.body.classList.add('strong-only');
+    var _b = document.getElementById('toggleStrongBtn');
+    if (_b) { _b.classList.add('active'); _b.textContent = '只看强势 ✓'; }
+  }
 } catch (e) {}
 setInterval(function () {
   var m = document.getElementById('modal');
@@ -451,7 +467,8 @@ def render_html(ledger: dict) -> str:
 <body>
 <header>
   <h1>山寨启动信号看板</h1>
-  <div class="sub">近70h信号 · OKX USDT 永续 · 15m波动放大(TR&gt;2×ATR14, 之前波动&lt;1%) · 24h成交额≥1000万 USDT · 绿色行=RS≥0.7强势 · 每60秒自动刷新 · 数据更新 {updated}</div>
+  <div class="sub">近70h信号 · OKX USDT 永续 · 15m波动放大(TR&gt;2×ATR14, 之前波动&lt;1%) · 24h成交额≥1000万 USDT · 绿色行=RS≥0.7强势 · 每60秒自动刷新 · 数据更新 {updated}
+  <button id="toggleStrongBtn" class="toggle-strong" onclick="toggleStrong()">只看强势</button></div>
 </header>
 {stats}
 {tabs}
