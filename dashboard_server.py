@@ -383,7 +383,17 @@ function show(i) {
   var weeks = document.querySelectorAll('.week');
   tabs.forEach(function (t, n) { t.classList.toggle('active', n === i); });
   weeks.forEach(function (w, n) { w.style.display = (n === i) ? 'block' : 'none'; });
+  try { localStorage.setItem('okx_tab', String(i)); } catch (e) {}
 }
+try {
+  var _t = parseInt(localStorage.getItem('okx_tab') || '0', 10);
+  show(_t);
+} catch (e) {}
+setInterval(function () {
+  var m = document.getElementById('modal');
+  if (m && m.style.display === 'flex') return;  // 看K线时不打断
+  location.reload();
+}, 60000);
 """
 
 
@@ -422,7 +432,7 @@ def render_html(ledger: dict) -> str:
 <body>
 <header>
   <h1>山寨启动信号看板</h1>
-  <div class="sub">OKX USDT 永续 · 创5日新高且昨日未启动 · 24h成交额≥4000万 USDT · 数据更新 {updated}</div>
+  <div class="sub">OKX USDT 永续 · 创5日新高且昨日未启动 · 24h成交额≥4000万 USDT · 每60秒自动刷新 · 数据更新 {updated}</div>
 </header>
 {stats}
 {tabs}
