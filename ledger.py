@@ -34,14 +34,13 @@ def save_ledger(ledger: dict) -> None:
 
 
 def append_signal(sig: dict) -> bool:
-    """Append a new signal event. Dedup by (symbol, signal_date). Returns True if added."""
+    """Append a new signal event. Dedup by (symbol, signal_ts). Returns True if added."""
     ledger = load_ledger()
     sym = sig["symbol"]
-    date = datetime.fromtimestamp(sig["signal_ts"], tz=CST).strftime("%Y-%m-%d")
     for s in ledger["signals"]:
-        if s.get("symbol") == sym and s.get("signal_date") == date:
+        if s.get("symbol") == sym and s.get("signal_ts") == sig["signal_ts"]:
             return False
-    sig["signal_date"] = date
+    sig["signal_date"] = datetime.fromtimestamp(sig["signal_ts"], tz=CST).strftime("%Y-%m-%d")
     sig["week"] = week_key(sig["signal_ts"])
     sig.setdefault("price_4h", None)
     sig.setdefault("ret_4h", None)

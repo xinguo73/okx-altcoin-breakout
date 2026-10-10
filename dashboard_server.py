@@ -110,13 +110,17 @@ def refresh_ledger(ledger: dict) -> bool:
             sig["last_price"] = last
             sig["ret_now"] = (last - sig["entry_price"]) / sig["entry_price"]
             changed = True
+    hourly_cache = {}
     for sig in ledger["signals"]:
         if sig.get("ret_12h") is not None:
             continue
-        try:
-            candles = fetch_hourly_candles(sig["inst_id"])
-        except Exception:
-            continue
+        inst = sig["inst_id"]
+        if inst not in hourly_cache:
+            try:
+                hourly_cache[inst] = fetch_hourly_candles(inst)
+            except Exception:
+                hourly_cache[inst] = {}
+        candles = hourly_cache[inst]
         if not candles:
             continue
         t0 = sig["signal_ts"]
