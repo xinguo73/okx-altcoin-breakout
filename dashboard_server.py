@@ -432,7 +432,7 @@ def render_html(ledger: dict) -> str:
 <body>
 <header>
   <h1>山寨启动信号看板</h1>
-  <div class="sub">OKX USDT 永续 · 创5日新高且昨日未启动 · 24h成交额≥5000万 USDT · 每60秒自动刷新 · 数据更新 {updated}</div>
+  <div class="sub">OKX USDT 永续 · 创5日新高且昨日未启动 · 24h成交额≥3000万 USDT · 每60秒自动刷新 · 数据更新 {updated}</div>
 </header>
 {stats}
 {tabs}

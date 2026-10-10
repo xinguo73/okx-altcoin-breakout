@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""OKX 山寨币启动扫描（5日新高 + 24h成交额>5000万USDT 的 USDT 永续合约）。
+"""OKX 山寨币启动扫描（5日新高 + 24h成交额>3000万USDT 的 USDT 永续合约）。
 
 信号定义（"启动"= 今日首次突破）：
   - 现价 last > 前5日最高价（不含今日，data[1:6] 的 high 最大值）
@@ -9,7 +9,7 @@
 过滤：
   - 仅 USDT 本位永续（instId 以 -USDT-SWAP 结尾）
   - 剔除稳定币（USDT/USDC/DAI 等，含 BTC/ETH 在内的其余币种都扫）
-  - 24h 成交额 volCcy24h × 现价 >= 50_000_000 USDT（volCcy24h 是币数，非 USDT）
+  - 24h 成交额 volCcy24h × 现价 >= 30_000_000 USDT（volCcy24h 是币数，非 USDT）
 
 去重：每标的每"启动事件"只报一次（last_alert_date 状态文件 + freshness 门槛）。
 纯标准库 requests+json；stdout 输出信号行，无信号=空输出=不投递(no_agent cron watchdog)。
@@ -32,7 +32,7 @@ CANDLES_URL = "https://www.okx.com/api/v5/market/candles"
 STATE_DIR = Path.home() / ".hermes" / "data" / "crypto_signals"
 
 # ── 参数 ──────────────────────────────────────────────────────────────────
-MIN_VOL_USDT = 50_000_000   # 24h 成交额下限（USDT）
+MIN_VOL_USDT = 30_000_000   # 24h 成交额下限（USDT）
 BREAKOUT_DAYS = 5           # 创 N 日新高
 CANDLE_LIMIT = 7            # 日线根数（今日 + 昨日 + 前5日 + 昨日的1日冗余）
 EXCLUDE_BASE = {"USDT", "USDC", "DAI", "TUSD", "BUSD", "FDUSD",
