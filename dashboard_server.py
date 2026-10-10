@@ -30,6 +30,7 @@ CANDLES_URL = "https://www.okx.com/api/v5/market/candles"
 HEADERS = {"User-Agent": "okx-altcoin-dashboard/1.0"}
 REFRESH_INTERVAL = 60  # seconds between ledger refreshes
 STRONG_RS = 0.7        # RS ≥ 此值标记为强势（绿色高亮）
+SIGNAL_WINDOW_HOURS = 70  # 看板只展示近 N 小时的信号
 
 _SESSION = requests.Session()
 _CACHE = {"html": None, "ts": 0.0}
@@ -415,7 +416,8 @@ setInterval(function () {
 
 
 def render_html(ledger: dict) -> str:
-    signals = ledger["signals"]
+    cutoff = time.time() - SIGNAL_WINDOW_HOURS * 3600
+    signals = [s for s in ledger["signals"] if s.get("signal_ts", 0) >= cutoff]
     weeks: dict[str, list] = {}
     for s in signals:
         weeks.setdefault(s.get("week") or week_key(s["signal_ts"]), []).append(s)
@@ -449,7 +451,7 @@ def render_html(ledger: dict) -> str:
 <body>
 <header>
   <h1>山寨启动信号看板</h1>
-  <div class="sub">OKX USDT 永续 · 15m波动放大(TR&gt;2×ATR14, 之前波动&lt;1%) · 24h成交额≥1000万 USDT · 绿色行=RS≥0.7强势 · 每60秒自动刷新 · 数据更新 {updated}</div>
+  <div class="sub">近70h信号 · OKX USDT 永续 · 15m波动放大(TR&gt;2×ATR14, 之前波动&lt;1%) · 24h成交额≥1000万 USDT · 绿色行=RS≥0.7强势 · 每60秒自动刷新 · 数据更新 {updated}</div>
 </header>
 {stats}
 {tabs}
