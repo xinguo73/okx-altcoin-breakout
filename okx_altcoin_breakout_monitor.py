@@ -8,7 +8,7 @@
 
 过滤：
   - 仅 USDT 本位永续（instId 以 -USDT-SWAP 结尾）
-  - 剔除 BTC/ETH 及稳定币
+  - 剔除稳定币（USDT/USDC/DAI 等，含 BTC/ETH 在内的其余币种都扫）
   - 24h 成交额 volCcy24h × 现价 >= 50_000_000 USDT（volCcy24h 是币数，非 USDT）
 
 去重：每标的每"启动事件"只报一次（last_alert_date 状态文件 + freshness 门槛）。
@@ -35,7 +35,7 @@ STATE_DIR = Path.home() / ".hermes" / "data" / "crypto_signals"
 MIN_VOL_USDT = 50_000_000   # 24h 成交额下限（USDT）
 BREAKOUT_DAYS = 5           # 创 N 日新高
 CANDLE_LIMIT = 7            # 日线根数（今日 + 昨日 + 前5日 + 昨日的1日冗余）
-EXCLUDE_BASE = {"BTC", "ETH", "USDT", "USDC", "DAI", "TUSD", "BUSD", "FDUSD",
+EXCLUDE_BASE = {"USDT", "USDC", "DAI", "TUSD", "BUSD", "FDUSD",
                 "USDP", "USD1", "AEUR", "EURT"}
 HEADERS = {"User-Agent": "okx-altcoin-breakout-monitor/1.0"}
 
@@ -124,7 +124,7 @@ def main() -> int:
     if "--selftest" in sys.argv:
         print("【山寨启动扫描·投递测试】收到此消息即表示飞书群投递正常。"
               f"策略：USDT永续，现价创{BREAKOUT_DAYS}日新高且昨日未启动，"
-              f"24h成交额≥{MIN_VOL_USDT / 1e6:.0f}M USDT，剔除BTC/ETH/稳定币。")
+              f"24h成交额≥{MIN_VOL_USDT / 1e6:.0f}M USDT，剔除稳定币。")
         return 0
 
     try:
