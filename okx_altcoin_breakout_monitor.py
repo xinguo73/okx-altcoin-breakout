@@ -4,6 +4,7 @@
 信号定义（"启动" = 波动突然放大）：
   - 最新一根已完成 15m K 线的真实波幅 TR > ATR_MULT × ATR14
     （ATR14 = 前 14 根已完成 15m 柱的平均真实波幅）
+  - 且 ATR14 占现价比例 < MAX_ATR_PCT%（之前波动较小，才是「启动」）
   - 且 24h 成交额 volCcy24h × 现价 > 10_000_000 USDT（过滤低流动性的杂波）
 
 过滤：
@@ -33,8 +34,9 @@ STATE_DIR = Path.home() / ".hermes" / "data" / "crypto_signals"
 # ── 参数 ──────────────────────────────────────────────────────────────────
 MIN_VOL_USDT = 10_000_000   # 24h 成交额下限（USDT）
 BAR = "15m"                 # K 线周期
-ATR_MULT = 1.5              # 波动放大倍数（当下 TR > ATR_MULT × ATR14）
+ATR_MULT = 2.0              # 波动放大倍数（当下 TR > ATR_MULT × ATR14）
 ATR_PERIOD = 14             # ATR 周期（前 N 根已完成柱）
+MAX_ATR_PCT = 1.0           # 之前ATR14占现价比例上限(%)：之前波动要小，才是「启动」
 CANDLE_LIMIT = ATR_PERIOD + 2   # 15m 柱数（当前未完成 + 最新已完成 + ATR周期 + 1 根前收）
 EXCLUDE_BASE = {"USDT", "USDC", "DAI", "TUSD", "BUSD", "FDUSD",
                 "USDP", "USD1", "AEUR", "EURT"}
@@ -74,8 +76,8 @@ def true_range(candles: list[list], i: int) -> float:
     return max(hi - lo, abs(hi - prev_close), abs(lo - prev_close))
 
 
-def atr_expansion(candles: list[list]):
-    """最新已完成 15m 柱 TR 相对 ATR14 的放大。返回 (ratio, bar_ts) 或 None。"""
+def atr_expansion(candles: list[list], last: float):
+    """最新已完成 15m 柱 TR 相对 ATR14 的放大。返回 (ratio, atr_pct, bar_ts) 或 None。"""
     if len(candles) < CANDLE_LIMIT:
         return None
     trs = [true_range(candles, i) for i in range(1, 1 + ATR_PERIOD)]
@@ -84,7 +86,7 @@ def atr_expansion(candles: list[list]):
     if atr14 <= 0:
         return None
     bar_ts = int(candles[1][0]) // 1000   # 最新已完成柱的开盘时间（epoch s）
-    return (latest_tr / atr14, bar_ts)
+    return (latest_tr / atr14, atr14 / last * 100, bar_ts)
 
 
 def load_state(sym: str) -> dict:
@@ -123,7 +125,7 @@ def format_signal(sig: dict) -> str:
     sym = sig["base"]
     lines = [f"【山寨启动】{sym} 15m波动放大"]
     lines.append(f"现价 {fmt_num(sig['last'])} USDT（24h {sig['chg_24h'] * 100:+.2f}%）")
-    lines.append(f"ATR放大 {sig['atr_ratio']:.2f}×（当前TR / ATR{ATR_PERIOD}）")
+    lines.append(f"ATR放大 {sig['atr_ratio']:.2f}× · 之前波动 {sig['atr_pct']:.2f}%")
     lines.append(f"24h成交额 {fmt_vol(sig['vol_usdt'])} USDT")
     lines.append(f"时间 {sig['cst_time']}（北京）")
     return "\n".join(lines)
@@ -132,8 +134,8 @@ def format_signal(sig: dict) -> str:
 def main() -> int:
     if "--selftest" in sys.argv:
         print("【山寨启动扫描·投递测试】收到此消息即表示飞书群投递正常。"
-              f"策略：USDT永续，15m当前TR>{ATR_MULT}xATR{ATR_PERIOD}且"
-              f"24h成交额≥{MIN_VOL_USDT / 1e6:.0f}M USDT，剔除稳定币。")
+              f"策略：USDT永续，15m当前TR>{ATR_MULT}xATR{ATR_PERIOD}且之前波动<{MAX_ATR_PCT}%"
+              f"且24h成交额≥{MIN_VOL_USDT / 1e6:.0f}M USDT，剔除稳定币。")
         return 0
 
     try:
@@ -177,12 +179,14 @@ def main() -> int:
             print(json.dumps({"inst_id": c["inst_id"], "status": "candle_fetch_failed",
                               "error": str(e)}, ensure_ascii=False), file=sys.stderr)
             continue
-        r = atr_expansion(candles)
+        r = atr_expansion(candles, c["last"])
         if r is None:
             continue
-        ratio, bar_ts = r
+        ratio, atr_pct, bar_ts = r
         if ratio <= ATR_MULT:
             continue
+        if atr_pct >= MAX_ATR_PCT:
+            continue   # 之前波动就大，不算「启动」
 
         # 去重：同一根已完成 15m 柱只报一次
         state = load_state(c["base"])
@@ -197,6 +201,7 @@ def main() -> int:
             "vol_usdt": c["vol_usdt"],
             "chg_24h": chg_24h,
             "atr_ratio": ratio,
+            "atr_pct": atr_pct,
             "cst_time": cst_time,
         }
         print(format_signal(sig))
@@ -213,6 +218,7 @@ def main() -> int:
             "vol_usdt": c["vol_usdt"],
             "chg_24h": chg_24h,
             "atr_ratio": ratio,
+            "atr_pct": atr_pct,
         })
 
     return 0
