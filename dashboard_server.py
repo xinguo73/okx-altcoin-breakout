@@ -29,6 +29,7 @@ TICKERS_URL = "https://www.okx.com/api/v5/market/tickers"
 CANDLES_URL = "https://www.okx.com/api/v5/market/candles"
 HEADERS = {"User-Agent": "okx-altcoin-dashboard/1.0"}
 REFRESH_INTERVAL = 60  # seconds between ledger refreshes
+STRONG_RS = 0.7        # RS ≥ 此值标记为强势（绿色高亮）
 
 _SESSION = requests.Session()
 _CACHE = {"html": None, "ts": 0.0}
@@ -152,12 +153,22 @@ def fmt_ret(r, pending_label="待定"):
     return f'<span class="{cls}">{pct:+.2f}%</span>'
 
 
+def fmt_rs(rs):
+    if rs is None:
+        return '<span class="na">-</span>'
+    cls = "rs-strong" if rs >= STRONG_RS else ("rs-mid" if rs >= 0.5 else "rs-weak")
+    return f'<span class="{cls}">{rs:.2f}</span>'
+
+
 def _row(sig):
+    rs = sig.get("rs")
+    strong = rs is not None and rs >= STRONG_RS
     cells = [
         f'<td class="sym">{sig["symbol"]} <span class="kl">K线▸</span></td>',
         f'<td>{fmt_cst(sig["signal_ts"])}</td>',
         f'<td class="num">{fmt_price(sig["entry_price"])}</td>',
         f'<td class="num">{fmt_price(sig.get("last_price"))}</td>',
+        f'<td class="num">{fmt_rs(rs)}</td>',
         f'<td class="num">{fmt_ret(sig.get("ret_4h"))}</td>',
         f'<td class="num">{fmt_ret(sig.get("ret_8h"))}</td>',
         f'<td class="num">{fmt_ret(sig.get("ret_12h"))}</td>',
@@ -165,7 +176,8 @@ def _row(sig):
     ]
     onclick = (f'onclick="openKline(\'{sig["inst_id"]}\', \'{sig["symbol"]}\', '
                f'{sig["signal_ts"]}, {sig["entry_price"]})"')
-    return f'<tr class="clickable" {onclick}>' + "".join(cells) + "</tr>"
+    cls = "clickable strong" if strong else "clickable"
+    return f'<tr class="{cls}" {onclick}>' + "".join(cells) + "</tr>"
 
 
 def _stats_block(signals):
@@ -196,7 +208,7 @@ def _week_section(wk, signals, idx, active):
   <h2>{label} <span class="wkid">{wk}</span> <span class="cnt">{len(signals)} 个信号</span></h2>
   <table>
     <thead><tr>
-      <th>币</th><th>启动时间</th><th>启动价格</th><th>当前价格</th>
+      <th>币</th><th>启动时间</th><th>启动价格</th><th>当前价格</th><th>RS</th>
       <th>+4h收益率</th><th>+8h收益率</th><th>+12h收益率</th><th>当下收益率</th>
     </tr></thead>
     <tbody>{rows}</tbody>
@@ -229,6 +241,11 @@ CSS = """
   tr.clickable { cursor: pointer; }
   .sym { font-weight: 600; color: #fff; }
   .kl { color: #2f6fed; font-size: 11px; font-weight: normal; }
+  tr.strong td { background: #16301d; }
+  tr.strong:hover td { background: #1d3a24; }
+  .rs-strong { color: #2ecc71; font-weight: 600; }
+  .rs-mid { color: #d9b64a; }
+  .rs-weak { color: #ff5c5c; }
   .num { text-align: right; font-variant-numeric: tabular-nums; }
   .pos { color: #2ecc71; }
   .neg { color: #ff5c5c; }
@@ -432,7 +449,7 @@ def render_html(ledger: dict) -> str:
 <body>
 <header>
   <h1>山寨启动信号看板</h1>
-  <div class="sub">OKX USDT 永续 · 15m波动放大(TR&gt;2×ATR14, 之前波动&lt;1%) · RS≥0.7 · 24h成交额≥1000万 USDT · 每60秒自动刷新 · 数据更新 {updated}</div>
+  <div class="sub">OKX USDT 永续 · 15m波动放大(TR&gt;2×ATR14, 之前波动&lt;1%) · 24h成交额≥1000万 USDT · 绿色行=RS≥0.7强势 · 每60秒自动刷新 · 数据更新 {updated}</div>
 </header>
 {stats}
 {tabs}

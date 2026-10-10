@@ -6,7 +6,7 @@
     （ATR14 = 前 14 根已完成 15m 柱的平均真实波幅）
   - 且 ATR14 占现价比例 < MAX_ATR_PCT%（之前波动较小，才是「启动」）
   - 且 24h 成交额 volCcy24h × 现价 > 10_000_000 USDT（过滤低流动性的杂波）
-  - 且相对强度 RS ≥ 0.7：近 1 小时 5m 柱中，BTC 阴线时币不阴线（扛跌）的比例 ≥ 70%
+  - 相对强度 RS 作为后续确认指标（非硬过滤）：近 1 小时 5m 柱中 BTC 阴线时币不阴线的比例，RS≥0.7 看板高亮为强势
 
 过滤：
   - 仅 USDT 本位永续（instId 以 -USDT-SWAP 结尾）
@@ -39,7 +39,7 @@ ATR_MULT = 2.0              # 波动放大倍数（当下 TR > ATR_MULT × ATR14
 ATR_PERIOD = 14             # ATR 周期（前 N 根已完成柱）
 MAX_ATR_PCT = 1.0           # 之前ATR14占现价比例上限(%)：之前波动要小，才是「启动」
 RS_WINDOW = 12              # 相对强度窗口（5m 柱数 = 1 小时）
-RS_MIN = 0.7                # 相对强度阈值：BTC阴线时币不阴线的比例 ≥ 此值
+RS_MIN = 0.7                # 强势阈值（RS≥此值看板绿色高亮；扫描器不按RS硬过滤）
 RS_MIN_BTC_DOWN = 3         # BTC阴线柱少于此时无法判断RS（视为不适用）
 CANDLE_LIMIT = ATR_PERIOD + 2   # 15m 柱数（当前未完成 + 最新已完成 + ATR周期 + 1 根前收）
 EXCLUDE_BASE = {"USDT", "USDC", "DAI", "TUSD", "BUSD", "FDUSD",
@@ -173,7 +173,7 @@ def main() -> int:
     if "--selftest" in sys.argv:
         print("【山寨启动扫描·投递测试】收到此消息即表示飞书群投递正常。"
               f"策略：USDT永续，15m当前TR>{ATR_MULT}xATR{ATR_PERIOD}且之前波动<{MAX_ATR_PCT}%"
-              f"且24h成交额≥{MIN_VOL_USDT / 1e6:.0f}M USDT且相对强度RS≥{RS_MIN}，剔除稳定币。")
+              f"且24h成交额≥{MIN_VOL_USDT / 1e6:.0f}M USDT；RS为强势确认(≥{RS_MIN}高亮)。")
         return 0
 
     try:
@@ -232,7 +232,7 @@ def main() -> int:
         if atr_pct >= MAX_ATR_PCT:
             continue   # 之前波动就大，不算「启动」
 
-        # 相对强度 vs BTC（5m）：BTC 阴线时币不阴线
+        # 相对强度 vs BTC（5m）：作为后续确认指标，不硬过滤
         rs_val = None; rs_btc_down = 0; rs_coin_held = 0
         if btc_5m:
             try:
@@ -240,11 +240,8 @@ def main() -> int:
             except Exception:
                 coin_5m = []
             r = rel_strength(coin_5m, btc_5m) if coin_5m else None
-            if r is None:
-                continue   # 数据不足，无法判断相对强度
-            rs_val, rs_btc_down, rs_coin_held = r
-            if rs_val < RS_MIN:
-                continue   # 跟着BTC跌，相对强度不足
+            if r is not None:
+                rs_val, rs_btc_down, rs_coin_held = r
 
         # 去重：同一根已完成 15m 柱只报一次
         state = load_state(c["base"])
