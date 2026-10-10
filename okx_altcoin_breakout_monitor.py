@@ -6,6 +6,7 @@
     （ATR14 = 前 14 根已完成 15m 柱的平均真实波幅）
   - 且 ATR14 占现价比例 < MAX_ATR_PCT%（之前波动较小，才是「启动」）
   - 且 24h 成交额 volCcy24h × 现价 > 10_000_000 USDT（过滤低流动性的杂波）
+  - 且相对强度 RS ≥ 0.7：近 1 小时 5m 柱中，BTC 阴线时币不阴线（扛跌）的比例 ≥ 70%
 
 过滤：
   - 仅 USDT 本位永续（instId 以 -USDT-SWAP 结尾）
@@ -37,6 +38,9 @@ BAR = "15m"                 # K 线周期
 ATR_MULT = 2.0              # 波动放大倍数（当下 TR > ATR_MULT × ATR14）
 ATR_PERIOD = 14             # ATR 周期（前 N 根已完成柱）
 MAX_ATR_PCT = 1.0           # 之前ATR14占现价比例上限(%)：之前波动要小，才是「启动」
+RS_WINDOW = 12              # 相对强度窗口（5m 柱数 = 1 小时）
+RS_MIN = 0.7                # 相对强度阈值：BTC阴线时币不阴线的比例 ≥ 此值
+RS_MIN_BTC_DOWN = 3         # BTC阴线柱少于此时无法判断RS（视为不适用）
 CANDLE_LIMIT = ATR_PERIOD + 2   # 15m 柱数（当前未完成 + 最新已完成 + ATR周期 + 1 根前收）
 EXCLUDE_BASE = {"USDT", "USDC", "DAI", "TUSD", "BUSD", "FDUSD",
                 "USDP", "USD1", "AEUR", "EURT"}
@@ -89,6 +93,38 @@ def atr_expansion(candles: list[list], last: float):
     return (latest_tr / atr14, atr14 / last * 100, bar_ts)
 
 
+def fetch_5m(inst_id: str) -> list[list]:
+    r = _SESSION.get(CANDLES_URL,
+                     params={"instId": inst_id, "bar": "5m",
+                             "limit": str(RS_WINDOW + 2)},
+                     headers=HEADERS, timeout=20)
+    r.raise_for_status()
+    p = r.json()
+    if p.get("code") != "0":
+        raise RuntimeError(f"5m candles code={p.get('code')}")
+    return p.get("data") or []   # 最新在前
+
+
+def rel_strength(coin_5m: list[list], btc_5m: list[list]):
+    """BTC 阴线时币不阴线的比例。返回 (rs, btc_down, coin_held) 或 None(数据不足)。"""
+    btc_down = 0
+    coin_held = 0
+    n = min(len(coin_5m), len(btc_5m), RS_WINDOW + 1)
+    for j in range(1, n):   # 跳过 index 0（未完成柱）
+        try:
+            btc_down_bar = float(btc_5m[j][4]) < float(btc_5m[j][1])
+            coin_hold = float(coin_5m[j][4]) >= float(coin_5m[j][1])
+        except (IndexError, ValueError, TypeError):
+            continue
+        if btc_down_bar:
+            btc_down += 1
+            if coin_hold:
+                coin_held += 1
+    if btc_down < RS_MIN_BTC_DOWN:
+        return None
+    return (coin_held / btc_down, btc_down, coin_held)
+
+
 def load_state(sym: str) -> dict:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     sf = STATE_DIR / f"okx_breakout_{sym}.json"
@@ -126,6 +162,8 @@ def format_signal(sig: dict) -> str:
     lines = [f"【山寨启动】{sym} 15m波动放大"]
     lines.append(f"现价 {fmt_num(sig['last'])} USDT（24h {sig['chg_24h'] * 100:+.2f}%）")
     lines.append(f"ATR放大 {sig['atr_ratio']:.2f}× · 之前波动 {sig['atr_pct']:.2f}%")
+    if sig.get("rs") is not None:
+        lines.append(f"RS {sig['rs']:.2f}（BTC跌时扛跌 {sig['rs_coin_held']}/{sig['rs_btc_down']}）")
     lines.append(f"24h成交额 {fmt_vol(sig['vol_usdt'])} USDT")
     lines.append(f"时间 {sig['cst_time']}（北京）")
     return "\n".join(lines)
@@ -135,7 +173,7 @@ def main() -> int:
     if "--selftest" in sys.argv:
         print("【山寨启动扫描·投递测试】收到此消息即表示飞书群投递正常。"
               f"策略：USDT永续，15m当前TR>{ATR_MULT}xATR{ATR_PERIOD}且之前波动<{MAX_ATR_PCT}%"
-              f"且24h成交额≥{MIN_VOL_USDT / 1e6:.0f}M USDT，剔除稳定币。")
+              f"且24h成交额≥{MIN_VOL_USDT / 1e6:.0f}M USDT且相对强度RS≥{RS_MIN}，剔除稳定币。")
         return 0
 
     try:
@@ -171,6 +209,12 @@ def main() -> int:
         candidates.append({"inst_id": inst, "base": base, "vol_usdt": vol_usdt,
                            "last": last, "open24h": open24h})
 
+    # BTC 5m 基准（相对强度对比）
+    try:
+        btc_5m = fetch_5m("BTC-USDT-SWAP")
+    except Exception:
+        btc_5m = []
+
     emitted = 0
     for c in candidates:
         try:
@@ -188,6 +232,20 @@ def main() -> int:
         if atr_pct >= MAX_ATR_PCT:
             continue   # 之前波动就大，不算「启动」
 
+        # 相对强度 vs BTC（5m）：BTC 阴线时币不阴线
+        rs_val = None; rs_btc_down = 0; rs_coin_held = 0
+        if btc_5m:
+            try:
+                coin_5m = fetch_5m(c["inst_id"])
+            except Exception:
+                coin_5m = []
+            r = rel_strength(coin_5m, btc_5m) if coin_5m else None
+            if r is None:
+                continue   # 数据不足，无法判断相对强度
+            rs_val, rs_btc_down, rs_coin_held = r
+            if rs_val < RS_MIN:
+                continue   # 跟着BTC跌，相对强度不足
+
         # 去重：同一根已完成 15m 柱只报一次
         state = load_state(c["base"])
         if state.get("last_alert_bar_ts") == bar_ts:
@@ -202,6 +260,9 @@ def main() -> int:
             "chg_24h": chg_24h,
             "atr_ratio": ratio,
             "atr_pct": atr_pct,
+            "rs": rs_val,
+            "rs_btc_down": rs_btc_down,
+            "rs_coin_held": rs_coin_held,
             "cst_time": cst_time,
         }
         print(format_signal(sig))
@@ -219,6 +280,7 @@ def main() -> int:
             "chg_24h": chg_24h,
             "atr_ratio": ratio,
             "atr_pct": atr_pct,
+            "rs": rs_val,
         })
 
     return 0
