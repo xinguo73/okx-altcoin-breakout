@@ -32,3 +32,15 @@
 ## 速率与限频
 
 每 5 分钟：1 次 tickers + 约 106 次日线请求 ≈ 0.36 req/s，远低于 OKX 公共接口 20 req/2s 限频，无封号风险。
+
+## 看板（Dashboard）
+
+HTTP 网页看板，按周分标签页展示每个启动信号的：启动时间 / 启动价格 / 当前价格 / +4h / +8h / +12h / 当下收益。
+
+- `ledger.py`  信号台账（scanner 写入，server 读取并追溯刷新收益）
+- `dashboard_server.py`  看板 HTTP 服务（端口 8787，stdlib http.server，无第三方依赖）
+- `deploy/okx-dashboard.service`  systemd 用户服务配置
+
+部署：systemd 用户服务 `okx-dashboard`（`~/.config/systemd/user/okx-dashboard.service`，Restart=always）。访问 http://<机器IP>:8787
+
+收益口径：+4h/+8h/+12h 用 1H K 线在目标整点收盘价追溯计算（信号后 N 小时，收盘价/启动价-1）；当下收益用实时 ticker last。
