@@ -163,7 +163,8 @@ def _row(sig):
         f'<td class="num">{fmt_ret(sig.get("ret_12h"))}</td>',
         f'<td class="num">{fmt_ret(sig.get("ret_now"))}</td>',
     ]
-    onclick = f'onclick="openKline(\'{sig["inst_id"]}\', \'{sig["symbol"]}\')"'
+    onclick = (f'onclick="openKline(\'{sig["inst_id"]}\', \'{sig["symbol"]}\', '
+               f'{sig["signal_ts"]}, {sig["entry_price"]})"')
     return f'<tr class="clickable" {onclick}>' + "".join(cells) + "</tr>"
 
 
@@ -250,11 +251,12 @@ CSS = """
 """
 
 JS = """
-var curInst = null, curBar = '1H';
-function openKline(inst, symbol) {
-  curInst = inst; curBar = '1H';
+var curInst = null, curBar = '1H', curTs = null, curPrice = null;
+function openKline(inst, symbol, ts, price) {
+  curInst = inst; curBar = '1H'; curTs = ts; curPrice = price;
   document.getElementById('modal').style.display = 'flex';
-  document.getElementById('modal-title').textContent = symbol + ' · ' + inst + ' K线';
+  var sig = (ts != null) ? ('信号 ' + fmtT(ts) + ' @ ' + fmtP(price)) : '';
+  document.getElementById('modal-title').textContent = symbol + ' · ' + inst + ' ' + sig;
   syncBarButtons(); loadKline();
 }
 function setBar(bar) { curBar = bar; syncBarButtons(); loadKline(); }
@@ -332,6 +334,37 @@ function renderKline(data) {
     rc.setAttribute('width', bw); rc.setAttribute('height', bh);
     rc.setAttribute('fill', color);
     svg.appendChild(rc);
+  }
+  if (curTs != null && curPrice != null && n >= 2) {
+    var t0 = data[0].time, interval = data[1].time - data[0].time;
+    var idx = interval > 0 ? (curTs - t0) / interval : 0;
+    if (idx >= -0.5 && idx <= n + 0.5) {
+      var sx = padL + idx * step + step / 2;
+      sx = Math.max(padL, Math.min(padL + pw, sx));
+      var sy = y(curPrice);
+      var vl = document.createElementNS(NS, 'line');
+      vl.setAttribute('x1', sx); vl.setAttribute('x2', sx);
+      vl.setAttribute('y1', padT); vl.setAttribute('y2', padT + ph);
+      vl.setAttribute('stroke', '#f5c542'); vl.setAttribute('stroke-width', '1.2');
+      vl.setAttribute('stroke-dasharray', '4,4');
+      svg.appendChild(vl);
+      var hl = document.createElementNS(NS, 'line');
+      hl.setAttribute('x1', padL); hl.setAttribute('x2', padL + pw);
+      hl.setAttribute('y1', sy); hl.setAttribute('y2', sy);
+      hl.setAttribute('stroke', '#f5c542'); hl.setAttribute('stroke-width', '1.2');
+      hl.setAttribute('stroke-dasharray', '4,4');
+      svg.appendChild(hl);
+      var dot = document.createElementNS(NS, 'circle');
+      dot.setAttribute('cx', sx); dot.setAttribute('cy', sy);
+      dot.setAttribute('r', '4'); dot.setAttribute('fill', '#f5c542');
+      svg.appendChild(dot);
+      var lb = document.createElementNS(NS, 'text');
+      lb.setAttribute('x', sx + 7); lb.setAttribute('y', sy - 7);
+      lb.setAttribute('fill', '#f5c542'); lb.setAttribute('font-size', '12');
+      lb.setAttribute('font-weight', '600');
+      lb.textContent = '启动信号';
+      svg.appendChild(lb);
+    }
   }
   var idxs = [0, Math.floor(n / 2), n - 1];
   for (var k = 0; k < idxs.length; k++) {
