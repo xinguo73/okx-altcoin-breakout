@@ -23,6 +23,10 @@ from pathlib import Path
 
 import requests
 
+# 让脚本无论从哪个 cwd 运行都能 import 同目录的 ledger 模块
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ledger import append_signal  # noqa: E402
+
 TICKERS_URL = "https://www.okx.com/api/v5/market/tickers"
 CANDLES_URL = "https://www.okx.com/api/v5/market/candles"
 STATE_DIR = Path.home() / ".hermes" / "data" / "crypto_signals"
@@ -202,6 +206,17 @@ def main() -> int:
                                "last_alert_ts": int(now.timestamp()),
                                "inst_id": c["inst_id"],
                                "prior_high": prior_5d_high})
+        # 记入信号台账（供网页看板追踪 4h/8h/12h/当下收益）
+        append_signal({
+            "symbol": c["base"],
+            "inst_id": c["inst_id"],
+            "signal_ts": int(now.timestamp()),
+            "entry_price": c["last"],
+            "vol_usdt": c["vol_usdt"],
+            "chg_24h": chg_24h,
+            "prior_high": prior_5d_high,
+            "breakout_pct": breakout_pct,
+        })
 
     return 0
 
