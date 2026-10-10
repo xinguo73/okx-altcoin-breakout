@@ -8,6 +8,10 @@ Type=simple
 ExecStart=/home/larryguo/.hermes/hermes-agent/venv/bin/python3 /home/larryguo/Projects/okx-altcoin-breakout/dashboard_server.py
 WorkingDirectory=/home/larryguo/Projects/okx-altcoin-breakout
 Environment="PATH=/home/larryguo/.hermes/hermes-agent/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="HTTP_PROXY=http://127.0.0.1:7897"
+Environment="HTTPS_PROXY=http://127.0.0.1:7897"
+Environment="ALL_PROXY=http://127.0.0.1:7897"
+Environment="NO_PROXY=localhost,127.0.0.1,::1"
 Restart=always
 RestartSec=5
 StandardOutput=journal

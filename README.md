@@ -35,12 +35,12 @@
 
 ## 看板（Dashboard）
 
-HTTP 网页看板，按周分标签页展示每个启动信号的：启动时间 / 启动价格 / 当前价格 / +4h / +8h / +12h / 当下收益。
+HTTP 网页看板，按周分标签页展示每个启动信号的：启动时间 / 启动价格 / 当前价格 / +4h / +8h / +12h / 当下收益率；顶部统计条（信号总数 + 各周期胜率）；点币名弹窗看 K 线（15m/1H/4H/1D，纯 SVG 自绘无外部依赖）。
 
 - `ledger.py`  信号台账（scanner 写入，server 读取并追溯刷新收益）
 - `dashboard_server.py`  看板 HTTP 服务（端口 8787，stdlib http.server，无第三方依赖）
-- `deploy/okx-dashboard.service`  systemd 用户服务配置
+- `deploy/okx-dashboard.service`  systemd 用户服务配置（需带 HTTP_PROXY 访问 OKX）
 
 部署：systemd 用户服务 `okx-dashboard`（`~/.config/systemd/user/okx-dashboard.service`，Restart=always）。访问 http://<机器IP>:8787
 
-收益口径：+4h/+8h/+12h 用 1H K 线在目标整点收盘价追溯计算（信号后 N 小时，收盘价/启动价-1）；当下收益用实时 ticker last。
+收益口径：+4h/+8h/+12h 用 1H K 线在目标整点收盘价追溯计算（信号后 N 小时，收盘价/启动价-1）；当下收益率用实时 ticker last。
