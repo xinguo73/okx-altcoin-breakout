@@ -494,7 +494,7 @@ class Handler(BaseHTTPRequestHandler):
             limit = min(int((q.get("limit") or ["200"])[0]), 500)
         except ValueError:
             limit = 200
-        if not inst or not inst.endswith("-SWAP"):
+        if not inst or not inst.endswith("-USDT-SWAP"):
             self.send_error(400)
             return
         if bar not in ("15m", "1H", "4H", "1D"):
