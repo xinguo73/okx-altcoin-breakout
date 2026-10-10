@@ -9,7 +9,7 @@
 过滤：
   - 仅 USDT 本位永续（instId 以 -USDT-SWAP 结尾）
   - 剔除 BTC/ETH 及稳定币
-  - 24h 成交额 volCcy24h >= 40_000_000 USDT
+  - 24h 成交额 volCcy24h × 现价 >= 40_000_000 USDT（volCcy24h 是币数，非 USDT）
 
 去重：每标的每"启动事件"只报一次（last_alert_date 状态文件 + freshness 门槛）。
 纯标准库 requests+json；stdout 输出信号行，无信号=空输出=不投递(no_agent cron watchdog)。
@@ -147,14 +147,18 @@ def main() -> int:
         if base in EXCLUDE_BASE:
             continue
         try:
-            vol = float(t.get("volCcy24h") or 0)
+            vol_base = float(t.get("volCcy24h") or 0)
             last = float(t.get("last") or 0)
             open24h = float(t.get("open24h") or 0)
         except (TypeError, ValueError):
             continue
-        if vol < MIN_VOL_USDT or last <= 0:
+        if last <= 0:
             continue
-        candidates.append({"inst_id": inst, "base": base, "vol_usdt": vol,
+        # volCcy24h 是 24h 成交量（币数），×现价才是 USDT 成交额
+        vol_usdt = vol_base * last
+        if vol_usdt < MIN_VOL_USDT:
+            continue
+        candidates.append({"inst_id": inst, "base": base, "vol_usdt": vol_usdt,
                            "last": last, "open24h": open24h})
 
     emitted = 0
