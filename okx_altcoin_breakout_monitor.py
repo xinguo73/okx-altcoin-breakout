@@ -45,6 +45,7 @@ RS_MIN = 0.7                # 强势阈值（RS≥此值看板绿色高亮；扫
 RS_MIN_BTC_DOWN = 3         # BTC阴线柱少于此时无法判断RS（视为不适用）
 CORR_WINDOW = 16            # 相关性窗口（15m 柱数 = 4 小时）
 CORR_MAX = 0.8              # 相关性上限：corr > 此值 = 跟随BTC，过滤掉
+COOLDOWN_HOURS = 12         # 同一币种冷却期（小时）：期内不重复报信号
 CANDLE_LIMIT = max(ATR_PERIOD, CORR_WINDOW) + 2   # 15m 柱数（足够 ATR + 相关性）
 EXCLUDE_BASE = {"USDT", "USDC", "DAI", "TUSD", "BUSD", "FDUSD",
                 "USDP", "USD1", "AEUR", "EURT"}
@@ -308,9 +309,12 @@ def main() -> int:
             if r is not None:
                 rs_val, rs_btc_down, rs_coin_held = r
 
-        # 去重：同一根已完成 15m 柱只报一次
+        # 去重：同一根已完成 15m 柱只报一次 + 冷却期内不重复报
         state = load_state(c["base"])
         if state.get("last_alert_bar_ts") == bar_ts:
+            continue
+        last_alert_ts = state.get("last_alert_ts")
+        if last_alert_ts and (now.timestamp() - last_alert_ts) < COOLDOWN_HOURS * 3600:
             continue
 
         chg_24h = (c["last"] - c["open24h"]) / c["open24h"] if c["open24h"] > 0 else 0.0

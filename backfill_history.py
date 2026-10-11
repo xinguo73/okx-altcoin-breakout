@@ -35,6 +35,7 @@ RS_WINDOW = 8           # 15m bars ≈ 2h（近似 5m 的 1h 窗口）
 RS_MIN_BTC_DOWN = 3
 CORR_WINDOW = 16        # 相关性窗口（15m 柱数 = 4h，与扫描器一致）
 CORR_MAX = 0.8          # 相关性上限：> 此值 = 跟随 BTC，过滤
+COOLDOWN_HOURS = 12     # 同一币种冷却期（小时）：期内不重复报信号
 WINDOW_HOURS = 70
 CST = timezone(timedelta(hours=8))
 
@@ -176,6 +177,16 @@ def main() -> int:
         seen.add(k)
         uniq.append(s)
     uniq.sort(key=lambda s: s["signal_ts"])
+    # 冷却去重：同一币种 COOLDOWN_HOURS 小时内只保留第一个信号
+    cooled = []
+    last_by_sym: dict[str, int] = {}
+    for s in uniq:
+        sym = s["symbol"]
+        if sym in last_by_sym and s["signal_ts"] - last_by_sym[sym] < COOLDOWN_HOURS * 3600:
+            continue
+        last_by_sym[sym] = s["signal_ts"]
+        cooled.append(s)
+    uniq = cooled
     for s in uniq:
         s["signal_date"] = datetime.fromtimestamp(s["signal_ts"], tz=CST).strftime("%Y-%m-%d")
         s["week"] = week_key(s["signal_ts"])
