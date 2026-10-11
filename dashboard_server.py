@@ -473,7 +473,7 @@ def render_html(ledger: dict) -> str:
 <body>
 <header>
   <h1>山寨启动信号看板</h1>
-  <div class="sub">近70h信号 · OKX USDT 永续 · 15m波动放大(TR&gt;2×ATR14, 之前波动&lt;1%) · 24h成交额≥1000万 USDT · 绿色行=RS≥0.7强势 · 每60秒自动刷新 · 数据更新 {updated}
+  <div class="sub">近70h信号 · OKX USDT 永续 · 15m波动放大(TR&gt;2×ATR14, 之前波动&lt;1.5%) · 24h成交额≥1000万 USDT · 绿色行=RS≥0.7强势 · 每60秒自动刷新 · 数据更新 {updated}
   <button id="toggleStrongBtn" class="toggle-strong" onclick="toggleStrong()">只看强势</button></div>
 </header>
 {stats}

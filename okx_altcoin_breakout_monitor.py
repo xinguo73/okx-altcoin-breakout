@@ -37,7 +37,7 @@ MIN_VOL_USDT = 10_000_000   # 24h 成交额下限（USDT）
 BAR = "15m"                 # K 线周期
 ATR_MULT = 2.0              # 波动放大倍数（当下 TR > ATR_MULT × ATR14）
 ATR_PERIOD = 14             # ATR 周期（前 N 根已完成柱）
-MAX_ATR_PCT = 1.0           # 之前ATR14占现价比例上限(%)：之前波动要小，才是「启动」
+MAX_ATR_PCT = 1.5           # 之前ATR14占现价比例上限(%)：之前波动要小，才是「启动」
 RS_WINDOW = 12              # 相对强度窗口（5m 柱数 = 1 小时）
 RS_MIN = 0.7                # 强势阈值（RS≥此值看板绿色高亮；扫描器不按RS硬过滤）
 RS_MIN_BTC_DOWN = 3         # BTC阴线柱少于此时无法判断RS（视为不适用）
