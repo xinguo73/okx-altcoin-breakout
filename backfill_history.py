@@ -27,7 +27,7 @@ CANDLES_URL = "https://www.okx.com/api/v5/market/candles"
 HEADERS = {"User-Agent": "okx-backfill/1.0"}
 EXCLUDE_BASE = {"USDT", "USDC", "DAI", "TUSD", "BUSD", "FDUSD",
                 "USDP", "USD1", "AEUR", "EURT"}
-MIN_VOL_USDT = 10_000_000
+MIN_VOL_USDT = 40_000_000
 ATR_MULT = 2.0
 ATR_PERIOD = 14
 MAX_ATR_PCT = 1.5

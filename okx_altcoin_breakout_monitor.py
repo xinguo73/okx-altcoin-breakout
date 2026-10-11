@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""OKX 山寨币启动扫描（15m 波动放大 + 24h成交额>1000万USDT 的 USDT 永续合约）。
+"""OKX 山寨币启动扫描（15m 波动放大 + 24h成交额>4000万USDT 的 USDT 永续合约）。
 
 信号定义（"启动" = 波动突然放大）：
   - 最新一根已完成 15m K 线的真实波幅 TR > ATR_MULT × ATR14
     （ATR14 = 前 14 根已完成 15m 柱的平均真实波幅）
   - 且 ATR14 占现价比例 < MAX_ATR_PCT%（之前波动较小，才是「启动」）
   - 且该柱收阳（close > open，向上启动，剔除砸盘阴线）
-  - 且 24h 成交额 volCcy24h × 现价 > 10_000_000 USDT（过滤低流动性的杂波）
+  - 且 24h 成交额 volCcy24h × 现价 > 40_000_000 USDT（过滤低流动性的杂波）
   - 相对强度 RS 作为后续确认指标（非硬过滤）：近 1 小时 5m 柱中 BTC 阴线时币不阴线的比例，RS≥0.7 看板高亮为强势
   - 且与 BTC 的相关性（近 4 小时 15m 收益率 Pearson）≤ 0.8：过滤掉「跟随 BTC」的纯 beta 品种
 
@@ -35,7 +35,7 @@ CANDLES_URL = "https://www.okx.com/api/v5/market/candles"
 STATE_DIR = Path.home() / ".hermes" / "data" / "crypto_signals"
 
 # ── 参数 ──────────────────────────────────────────────────────────────────
-MIN_VOL_USDT = 10_000_000   # 24h 成交额下限（USDT）
+MIN_VOL_USDT = 40_000_000   # 24h 成交额下限（USDT）
 BAR = "15m"                 # K 线周期
 ATR_MULT = 2.0              # 波动放大倍数（当下 TR > ATR_MULT × ATR14）
 ATR_PERIOD = 14             # ATR 周期（前 N 根已完成柱）
