@@ -33,6 +33,8 @@ ATR_PERIOD = 14
 MAX_ATR_PCT = 1.5
 RS_WINDOW = 8           # 15m bars ≈ 2h（近似 5m 的 1h 窗口）
 RS_MIN_BTC_DOWN = 3
+CORR_WINDOW = 16        # 相关性窗口（15m 柱数 = 4h，与扫描器一致）
+CORR_MAX = 0.8          # 相关性上限：> 此值 = 跟随 BTC，过滤
 WINDOW_HOURS = 70
 CST = timezone(timedelta(hours=8))
 
@@ -52,6 +54,40 @@ def fetch(inst: str, bar: str, limit: int) -> list[list]:
 def true_range(c, i):
     hi = float(c[i][2]); lo = float(c[i][3]); pc = float(c[i + 1][4])
     return max(hi - lo, abs(hi - pc), abs(lo - pc))
+
+
+def pearson(xs, ys):
+    n = len(xs)
+    if n < 2:
+        return None
+    mx = sum(xs) / n
+    my = sum(ys) / n
+    cov = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    vx = sum((x - mx) ** 2 for x in xs)
+    vy = sum((y - my) ** 2 for y in ys)
+    if vx <= 0 or vy <= 0:
+        return None
+    return cov / (vx * vy) ** 0.5
+
+
+def corr_at(bars, btc, i, W=CORR_WINDOW):
+    """bars[i] 相对 BTC 的 15m 收益率相关性（窗口 W，结束于 i）。"""
+    xs, ys = [], []
+    for j in range(i - W + 1, i + 1):
+        if j <= 0 or j >= len(btc):
+            continue
+        try:
+            c0 = float(bars[j - 1][4]); c1 = float(bars[j][4])
+            b0 = float(btc[j - 1][4]); b1 = float(btc[j][4])
+        except (IndexError, ValueError, TypeError):
+            continue
+        if c0 == 0 or b0 == 0:
+            continue
+        xs.append(c1 / c0 - 1.0)
+        ys.append(b1 / b0 - 1.0)
+    if len(xs) < 8:
+        return None
+    return pearson(xs, ys)
 
 
 def main() -> int:
@@ -103,6 +139,10 @@ def main() -> int:
             ratio = trs[i] / atr
             ap = atr / close * 100
             if ratio > ATR_MULT and ap < MAX_ATR_PCT and close > opn:
+                # 相关性 vs BTC：过滤跟随 BTC 的品种
+                corr = corr_at(bars, btc, i)
+                if corr is not None and corr > CORR_MAX:
+                    continue
                 btc_down = coin_held = 0
                 for j in range(max(0, i - RS_WINDOW + 1), i + 1):
                     if j >= len(btc):
@@ -122,6 +162,7 @@ def main() -> int:
                     "atr_ratio": round(ratio, 3),
                     "atr_pct": round(ap, 3),
                     "rs": round(rs, 3) if rs is not None else None,
+                    "corr": round(corr, 3) if corr is not None else None,
                 })
                 latest_bar[base] = ts
 
