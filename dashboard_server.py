@@ -223,6 +223,7 @@ def _week_section(wk, signals, idx, active):
     return f"""
 <div class="week" id="wk{idx}" style="display:{disp}">
   <h2>{label} <span class="wkid">{wk}</span> <span class="cnt">{len(signals)} 个信号</span></h2>
+  <div class="table-wrap">
   <table>
     <thead><tr>
       <th>币</th><th>启动时间</th><th class="num">启动价格</th><th class="num">当前价格</th><th class="num">RS</th><th class="num">相关性</th>
@@ -230,6 +231,7 @@ def _week_section(wk, signals, idx, active):
     </tr></thead>
     <tbody>{rows}</tbody>
   </table>
+  </div>
 </div>"""
 
 
@@ -254,6 +256,7 @@ CSS = """
   table { border-collapse: collapse; width: 100%; font-size: 13px; }
   th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #232c40; }
   th { color: #8b93a7; font-weight: 600; background: #141b2b; }
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   tr:hover td { background: #171f31; }
   tr.clickable { cursor: pointer; }
   .sym { font-weight: 600; color: #fff; }
@@ -273,6 +276,16 @@ CSS = """
   .neg { color: #ff5c5c; }
   .na { color: #5b6377; }
   .empty { color: #8b93a7; padding: 24px; }
+  @media (max-width: 640px) {
+    header { padding: 14px 12px 6px; }
+    header h1 { font-size: 18px; }
+    header .sub { font-size: 12px; }
+    .stats { padding: 8px 12px 0; gap: 10px; font-size: 12px; }
+    .tabs { padding: 8px 12px 0; gap: 6px; }
+    .week { padding: 12px 12px 20px; }
+    table { font-size: 12px; }
+    th, td { padding: 6px 6px; }
+  }
   .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.62);
            z-index: 50; align-items: center; justify-content: center; }
   .modal-box { background: #0f1420; border: 1px solid #2a3247; border-radius: 10px;
@@ -478,7 +491,12 @@ def render_html(ledger: dict) -> str:
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>山寨启动信号看板</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="启动信号">
+<meta name="theme-color" content="#0f1420">
+<title>启动信号看板</title>
 <style>{CSS}</style>
 </head>
 <body>
