@@ -7,6 +7,7 @@
   - 且 ATR14 占现价比例 < MAX_ATR_PCT%（之前波动较小，才是「启动」）
   - 且 24h 成交额 volCcy24h × 现价 > 10_000_000 USDT（过滤低流动性的杂波）
   - 相对强度 RS 作为后续确认指标（非硬过滤）：近 1 小时 5m 柱中 BTC 阴线时币不阴线的比例，RS≥0.7 看板高亮为强势
+  - 且与 BTC 的相关性（近 4 小时 15m 收益率 Pearson）≤ 0.8：过滤掉「跟随 BTC」的纯 beta 品种
 
 过滤：
   - 仅 USDT 本位永续（instId 以 -USDT-SWAP 结尾）
@@ -41,7 +42,9 @@ MAX_ATR_PCT = 1.5           # 之前ATR14占现价比例上限(%)：之前波动
 RS_WINDOW = 12              # 相对强度窗口（5m 柱数 = 1 小时）
 RS_MIN = 0.7                # 强势阈值（RS≥此值看板绿色高亮；扫描器不按RS硬过滤）
 RS_MIN_BTC_DOWN = 3         # BTC阴线柱少于此时无法判断RS（视为不适用）
-CANDLE_LIMIT = ATR_PERIOD + 2   # 15m 柱数（当前未完成 + 最新已完成 + ATR周期 + 1 根前收）
+CORR_WINDOW = 16            # 相关性窗口（15m 柱数 = 4 小时）
+CORR_MAX = 0.8              # 相关性上限：corr > 此值 = 跟随BTC，过滤掉
+CANDLE_LIMIT = max(ATR_PERIOD, CORR_WINDOW) + 2   # 15m 柱数（足够 ATR + 相关性）
 EXCLUDE_BASE = {"USDT", "USDC", "DAI", "TUSD", "BUSD", "FDUSD",
                 "USDP", "USD1", "AEUR", "EURT"}
 HEADERS = {"User-Agent": "okx-altcoin-breakout-monitor/1.0"}
@@ -125,6 +128,47 @@ def rel_strength(coin_5m: list[list], btc_5m: list[list]):
     return (coin_held / btc_down, btc_down, coin_held)
 
 
+def pearson(xs: list[float], ys: list[float]):
+    n = len(xs)
+    if n < 2:
+        return None
+    mx = sum(xs) / n
+    my = sum(ys) / n
+    cov = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    vx = sum((x - mx) ** 2 for x in xs)
+    vy = sum((y - my) ** 2 for y in ys)
+    if vx <= 0 or vy <= 0:
+        return None
+    return cov / (vx * vy) ** 0.5
+
+
+def btc_correlation(coin_candles: list[list], btc_close_map: dict[int, float]):
+    """15m 收益率与 BTC 的 Pearson 相关性，窗口 CORR_WINDOW，结束于最新已完成柱。"""
+    xs: list[float] = []
+    ys: list[float] = []
+    for j in range(1, 1 + CORR_WINDOW):
+        if j + 1 >= len(coin_candles):
+            break
+        try:
+            c0 = float(coin_candles[j + 1][4])
+            c1 = float(coin_candles[j][4])
+        except (IndexError, ValueError, TypeError):
+            continue
+        if c0 == 0:
+            continue
+        t0 = int(coin_candles[j + 1][0]) // 1000
+        t1 = int(coin_candles[j][0]) // 1000
+        b0 = btc_close_map.get(t0)
+        b1 = btc_close_map.get(t1)
+        if b0 is None or b1 is None or b0 == 0:
+            continue
+        xs.append(c1 / c0 - 1.0)
+        ys.append(b1 / b0 - 1.0)
+    if len(xs) < 8:
+        return None
+    return pearson(xs, ys)
+
+
 def load_state(sym: str) -> dict:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     sf = STATE_DIR / f"okx_breakout_{sym}.json"
@@ -164,6 +208,8 @@ def format_signal(sig: dict) -> str:
     lines.append(f"ATR放大 {sig['atr_ratio']:.2f}× · 之前波动 {sig['atr_pct']:.2f}%")
     if sig.get("rs") is not None:
         lines.append(f"RS {sig['rs']:.2f}（BTC跌时扛跌 {sig['rs_coin_held']}/{sig['rs_btc_down']}）")
+    if sig.get("corr") is not None:
+        lines.append(f"相关性 {sig['corr']:.2f}（vs BTC 4h）")
     lines.append(f"24h成交额 {fmt_vol(sig['vol_usdt'])} USDT")
     lines.append(f"时间 {sig['cst_time']}（北京）")
     return "\n".join(lines)
@@ -173,7 +219,7 @@ def main() -> int:
     if "--selftest" in sys.argv:
         print("【山寨启动扫描·投递测试】收到此消息即表示飞书群投递正常。"
               f"策略：USDT永续，15m当前TR>{ATR_MULT}xATR{ATR_PERIOD}且之前波动<{MAX_ATR_PCT}%"
-              f"且24h成交额≥{MIN_VOL_USDT / 1e6:.0f}M USDT；RS为强势确认(≥{RS_MIN}高亮)。")
+              f"且24h成交额≥{MIN_VOL_USDT / 1e6:.0f}M USDT且与BTC相关性≤{CORR_MAX}；RS为强势确认(≥{RS_MIN}高亮)。")
         return 0
 
     try:
@@ -215,6 +261,13 @@ def main() -> int:
     except Exception:
         btc_5m = []
 
+    # BTC 15m 基准（相关性对比）
+    try:
+        btc_candles = fetch_candles("BTC-USDT-SWAP")
+        btc_close_map = {int(c[0]) // 1000: float(c[4]) for c in btc_candles}
+    except Exception:
+        btc_close_map = {}
+
     emitted = 0
     for c in candidates:
         try:
@@ -231,6 +284,13 @@ def main() -> int:
             continue
         if atr_pct >= MAX_ATR_PCT:
             continue   # 之前波动就大，不算「启动」
+
+        # 相关性 vs BTC（15m）：过滤掉「跟随 BTC」的品种（corr > CORR_MAX）
+        corr_val = None
+        if btc_close_map:
+            corr_val = btc_correlation(candles, btc_close_map)
+            if corr_val is not None and corr_val > CORR_MAX:
+                continue   # 跟随 BTC，无独立行情
 
         # 相对强度 vs BTC（5m）：作为后续确认指标，不硬过滤
         rs_val = None; rs_btc_down = 0; rs_coin_held = 0
@@ -260,6 +320,7 @@ def main() -> int:
             "rs": rs_val,
             "rs_btc_down": rs_btc_down,
             "rs_coin_held": rs_coin_held,
+            "corr": corr_val,
             "cst_time": cst_time,
         }
         print(format_signal(sig))
@@ -278,6 +339,7 @@ def main() -> int:
             "atr_ratio": ratio,
             "atr_pct": atr_pct,
             "rs": rs_val,
+            "corr": corr_val,
         })
 
     return 0
