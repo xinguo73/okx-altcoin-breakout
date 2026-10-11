@@ -203,7 +203,7 @@ def fmt_vol(v: float) -> str:
 
 def format_signal(sig: dict) -> str:
     sym = sig["base"]
-    lines = [f"【山寨启动】{sym} 15m波动放大"]
+    lines = [f"【启动信号，ATR放大】{sym}"]
     lines.append(f"现价 {fmt_num(sig['last'])} USDT（24h {sig['chg_24h'] * 100:+.2f}%）")
     lines.append(f"ATR放大 {sig['atr_ratio']:.2f}× · 之前波动 {sig['atr_pct']:.2f}%")
     if sig.get("rs") is not None:

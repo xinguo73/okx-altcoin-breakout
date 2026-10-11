@@ -164,6 +164,18 @@ def fmt_rs(rs):
     return f'<span class="{cls}">{rs:.2f}</span>'
 
 
+def fmt_corr(corr):
+    if corr is None:
+        return '<span class="na">-</span>'
+    if corr < 0:
+        cls = "pos"          # 反向，最强
+    elif corr >= 0.6:
+        cls = "rs-mid"       # 接近跟随 BTC
+    else:
+        cls = ""
+    return f'<span class="{cls}">{corr:.2f}</span>'
+
+
 def _row(sig):
     rs = sig.get("rs")
     strong = rs is not None and rs >= STRONG_RS
@@ -173,6 +185,7 @@ def _row(sig):
         f'<td class="num">{fmt_price(sig["entry_price"])}</td>',
         f'<td class="num">{fmt_price(sig.get("last_price"))}</td>',
         f'<td class="num">{fmt_rs(rs)}</td>',
+        f'<td class="num">{fmt_corr(sig.get("corr"))}</td>',
         f'<td class="num">{fmt_ret(sig.get("ret_4h"))}</td>',
         f'<td class="num">{fmt_ret(sig.get("ret_8h"))}</td>',
         f'<td class="num">{fmt_ret(sig.get("ret_12h"))}</td>',
@@ -212,7 +225,7 @@ def _week_section(wk, signals, idx, active):
   <h2>{label} <span class="wkid">{wk}</span> <span class="cnt">{len(signals)} 个信号</span></h2>
   <table>
     <thead><tr>
-      <th>币</th><th>启动时间</th><th class="num">启动价格</th><th class="num">当前价格</th><th class="num">RS</th>
+      <th>币</th><th>启动时间</th><th class="num">启动价格</th><th class="num">当前价格</th><th class="num">RS</th><th class="num">相关性</th>
       <th class="num">+4h收益率</th><th class="num">+8h收益率</th><th class="num">+12h收益率</th><th class="num">当下收益率</th>
     </tr></thead>
     <tbody>{rows}</tbody>
