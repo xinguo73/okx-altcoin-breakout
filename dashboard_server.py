@@ -30,6 +30,8 @@ CANDLES_URL = "https://www.okx.com/api/v5/market/candles"
 HEADERS = {"User-Agent": "okx-altcoin-dashboard/1.0"}
 REFRESH_INTERVAL = 60  # seconds between ledger refreshes
 STRONG_RS = 0.7        # RS ≥ 此值标记为强势（绿色高亮）
+MOMENTUM_KING_RS = 0.7     # 动量王：RS≥此值（相对强度强）
+MOMENTUM_KING_CORR = 0.3   # 动量王：corr≤此值（不跟随BTC）
 
 _SESSION = requests.Session()
 _CACHE = {"html": None, "ts": 0.0}
@@ -176,11 +178,20 @@ def fmt_corr(corr):
     return f'<span class="{cls}">{corr:.2f}</span>'
 
 
+def is_momentum_king(sig: dict) -> bool:
+    """动量王 = RS≥0.7 且 corr≤0.3。回测 58% 胜率、+12h 均值 +3.27%（n=31，vs 基线 45%/-0.17%）。"""
+    rs = sig.get("rs")
+    corr = sig.get("corr")
+    return (rs is not None and rs >= MOMENTUM_KING_RS and
+            corr is not None and corr <= MOMENTUM_KING_CORR)
+
+
 def _row(sig):
     rs = sig.get("rs")
     strong = rs is not None and rs >= STRONG_RS
+    king = is_momentum_king(sig)
     cells = [
-        f'<td class="sym">{sig["symbol"]} <span class="kl">K线▸</span></td>',
+        f'<td class="sym">{"🔥" if king else ""}{sig["symbol"]} <span class="kl">K线▸</span></td>',
         f'<td>{fmt_cst(sig["signal_ts"])}</td>',
         f'<td class="num">{fmt_price(sig["entry_price"])}</td>',
         f'<td class="num">{fmt_price(sig.get("last_price"))}</td>',
@@ -194,12 +205,16 @@ def _row(sig):
     onclick = (f'onclick="openKline(\'{sig["inst_id"]}\', \'{sig["symbol"]}\', '
                f'{sig["signal_ts"]}, {sig["entry_price"]})"')
     cls = "clickable strong" if strong else "clickable"
+    if king:
+        cls += " king"
     return f'<tr class="{cls}" {onclick}>' + "".join(cells) + "</tr>"
 
 
 def _stats_block(signals):
     total = len(signals)
-    parts = [f'<span class="stat total">总信号数 <b>{total}</b></span>']
+    kings = sum(1 for s in signals if is_momentum_king(s))
+    parts = [f'<span class="stat total">总信号数 <b>{total}</b></span>',
+             f'<span class="stat">🔥动量王 <b>{kings}</b> 个</span>']
     for label, key in (("4h", "ret_4h"), ("8h", "ret_8h"),
                        ("12h", "ret_12h"), ("当下", "ret_now")):
         vals = [s[key] for s in signals if s.get(key) is not None]
@@ -263,6 +278,9 @@ CSS = """
   .kl { color: #2f6fed; font-size: 11px; font-weight: normal; }
   tr.strong td { background: #16301d; }
   tr.strong:hover td { background: #1d3a24; }
+  tr.king td { background: #3a2a0a; }
+  tr.king:hover td { background: #46330f; }
+  body.king-only tr.clickable:not(.king) { display: none; }
   .rs-strong { color: #2ecc71; font-weight: 600; }
   .rs-mid { color: #d9b64a; }
   .rs-weak { color: #ff5c5c; }
@@ -443,6 +461,12 @@ function toggleStrong() {
   if (btn) { btn.classList.toggle('active', on); btn.textContent = on ? '只看强势 ✓' : '只看强势'; }
   try { localStorage.setItem('okx_strong_only', on ? '1' : '0'); } catch (e) {}
 }
+function toggleKing() {
+  var btn = document.getElementById('toggleKingBtn');
+  var on = document.body.classList.toggle('king-only');
+  if (btn) { btn.classList.toggle('active', on); btn.textContent = on ? '只看动量王 ✓' : '只看动量王'; }
+  try { localStorage.setItem('okx_king_only', on ? '1' : '0'); } catch (e) {}
+}
 try {
   var _t = parseInt(localStorage.getItem('okx_tab') || '0', 10);
   show(_t);
@@ -450,6 +474,11 @@ try {
     document.body.classList.add('strong-only');
     var _b = document.getElementById('toggleStrongBtn');
     if (_b) { _b.classList.add('active'); _b.textContent = '只看强势 ✓'; }
+  }
+  if (localStorage.getItem('okx_king_only') === '1') {
+    document.body.classList.add('king-only');
+    var _kb = document.getElementById('toggleKingBtn');
+    if (_kb) { _kb.classList.add('active'); _kb.textContent = '只看动量王 ✓'; }
   }
 } catch (e) {}
 setInterval(function () {
@@ -502,8 +531,9 @@ def render_html(ledger: dict) -> str:
 <body>
 <header>
   <h1>山寨启动信号看板</h1>
-  <div class="sub">OKX USDT 永续 · 15m波动放大(TR&gt;2×ATR14, 之前波动&lt;1.5%) · 24h成交额≥4000万 USDT · 绿色行=RS≥0.7强势 · 每60秒自动刷新 · 数据更新 {updated}
-  <button id="toggleStrongBtn" class="toggle-strong" onclick="toggleStrong()">只看强势</button></div>
+  <div class="sub">OKX USDT 永续 · 15m波动放大(TR&gt;2×ATR14, 之前波动&lt;1.5%) · 24h成交额≥4000万 USDT · 绿色行=RS≥0.7强势 · 金色行=🔥动量王(RS≥0.7且corr≤0.3) · 每60秒自动刷新 · 数据更新 {updated}
+  <button id="toggleStrongBtn" class="toggle-strong" onclick="toggleStrong()">只看强势</button>
+  <button id="toggleKingBtn" class="toggle-strong" onclick="toggleKing()">只看动量王</button></div>
 </header>
 {stats}
 {tabs}

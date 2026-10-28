@@ -43,6 +43,8 @@ MAX_ATR_PCT = 1.5           # 之前ATR14占现价比例上限(%)：之前波动
 RS_WINDOW = 12              # 相对强度窗口（5m 柱数 = 1 小时）
 RS_MIN = 0.7                # 强势阈值（RS≥此值看板绿色高亮；扫描器不按RS硬过滤）
 RS_MIN_BTC_DOWN = 3         # BTC阴线柱少于此时无法判断RS（视为不适用）
+MOMENTUM_KING_RS = 0.7      # 动量王：RS≥此值（相对强度强）
+MOMENTUM_KING_CORR = 0.3    # 动量王：corr≤此值（不跟随BTC，独立行情）
 CORR_WINDOW = 16            # 相关性窗口（15m 柱数 = 4 小时）
 CORR_MAX = 0.8              # 相关性上限：corr > 此值 = 跟随BTC，过滤掉
 COOLDOWN_HOURS = 12         # 同一币种冷却期（小时）：期内不重复报信号
@@ -203,9 +205,16 @@ def fmt_vol(v: float) -> str:
     return f"{v:,.0f}"
 
 
+def is_momentum_king(rs: float | None, corr: float | None) -> bool:
+    """动量王 = RS≥0.7 且 corr≤0.3。回测 58% 胜率、+12h 均值 +3.27%（n=31，vs 基线 45%/-0.17%）。"""
+    return (rs is not None and rs >= MOMENTUM_KING_RS and
+            corr is not None and corr <= MOMENTUM_KING_CORR)
+
+
 def format_signal(sig: dict) -> str:
     sym = sig["base"]
-    lines = [f"【启动信号，ATR放大】{sym}"]
+    tag = "🔥动量王 " if is_momentum_king(sig.get("rs"), sig.get("corr")) else ""
+    lines = [f"【启动信号，ATR放大】{tag}{sym}"]
     lines.append(f"现价 {fmt_num(sig['last'])} USDT（24h {sig['chg_24h'] * 100:+.2f}%）")
     lines.append(f"ATR放大 {sig['atr_ratio']:.2f}× · 之前波动 {sig['atr_pct']:.2f}%")
     if sig.get("rs") is not None:
