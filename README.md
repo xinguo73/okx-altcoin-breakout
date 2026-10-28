@@ -9,6 +9,7 @@
 - 24h 成交额 ≥ 4000 万 USDT（过滤低流动性杂波）
 - 相对强度 RS（后续确认指标，非硬过滤）：近 1 小时 BTC 5m 阴线时币不阴线的比例，RS≥0.7 看板绿色高亮为强势
 - 「动量王」标记：RS≥0.7 且 corr≤0.3（不跟随BTC）时，飞书信号加 🔥动量王 前缀、看板金色高亮并提供「只看动量王」一键筛选（回测 58% 胜率、+12h 均值 +3.27%，n=31）
+- 品种分类：通过 OKX `instCategory` 区分 crypto(=1) / 代币化股票ETF(=3) / 商品(=4)。飞书信号对非 crypto 加类型标签（股票ETF/商品）；看板每行显示类型徽标，顶部提供「全部/crypto/非crypto」筛选，统计条分别显示 crypto 与非 crypto 的动量王数量（非 crypto 天然不跟 BTC，corr≤0.3 对它们无效，需分开看）
 - 与 BTC 相关性 ≤ 0.8（近 4 小时 15m 收益率 Pearson）：过滤「跟随 BTC」的纯 beta 品种
 - 仅 USDT 本位永续（instId 以 `-USDT-SWAP` 结尾）
 - 剔除稳定币（BTC/ETH 及代币化股票/商品 SNDK/SOXL/SPCX/XAU 等均纳入）

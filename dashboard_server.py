@@ -21,7 +21,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from ledger import load_ledger, save_ledger, week_key, week_label, fmt_cst  # noqa: E402
+from ledger import (load_ledger, save_ledger, week_key, week_label, fmt_cst,  # noqa: E402
+                    fetch_instrument_categories, category_label, is_crypto)
 
 import requests
 
@@ -101,6 +102,11 @@ def fetch_ohlcv(inst_id: str, bar: str, limit: int = 200) -> list[dict]:
 
 def refresh_ledger(ledger: dict) -> bool:
     changed = False
+    cat_map = fetch_instrument_categories()
+    for sig in ledger["signals"]:
+        if not sig.get("category"):
+            sig["category"] = cat_map.get(sig["symbol"], "")
+            changed = True
     try:
         last_map = fetch_tickers()
     except Exception:
@@ -190,8 +196,11 @@ def _row(sig):
     rs = sig.get("rs")
     strong = rs is not None and rs >= STRONG_RS
     king = is_momentum_king(sig)
+    crypto = is_crypto(sig.get("category"))
+    cat_badge = "" if crypto else \
+        f'<span class="cat-tag">{category_label(sig.get("category"))}</span>'
     cells = [
-        f'<td class="sym">{"🔥" if king else ""}{sig["symbol"]} <span class="kl">K线▸</span></td>',
+        f'<td class="sym">{"🔥" if king else ""}{sig["symbol"]} {cat_badge}<span class="kl">K线▸</span></td>',
         f'<td>{fmt_cst(sig["signal_ts"])}</td>',
         f'<td class="num">{fmt_price(sig["entry_price"])}</td>',
         f'<td class="num">{fmt_price(sig.get("last_price"))}</td>',
@@ -207,14 +216,19 @@ def _row(sig):
     cls = "clickable strong" if strong else "clickable"
     if king:
         cls += " king"
+    cls += " cat-crypto" if crypto else " cat-noncrypto"
     return f'<tr class="{cls}" {onclick}>' + "".join(cells) + "</tr>"
 
 
 def _stats_block(signals):
     total = len(signals)
     kings = sum(1 for s in signals if is_momentum_king(s))
+    crypto_kings = sum(1 for s in signals if is_momentum_king(s) and is_crypto(s.get("category")))
+    n_crypto = sum(1 for s in signals if is_crypto(s.get("category")))
+    n_noncrypto = total - n_crypto
     parts = [f'<span class="stat total">总信号数 <b>{total}</b></span>',
-             f'<span class="stat">🔥动量王 <b>{kings}</b> 个</span>']
+             f'<span class="stat">crypto <b>{n_crypto}</b> · 非crypto <b>{n_noncrypto}</b></span>',
+             f'<span class="stat">🔥动量王 <b>{kings}</b> 个（crypto <b>{crypto_kings}</b>）</span>']
     for label, key in (("4h", "ret_4h"), ("8h", "ret_8h"),
                        ("12h", "ret_12h"), ("当下", "ret_now")):
         vals = [s[key] for s in signals if s.get(key) is not None]
@@ -281,6 +295,12 @@ CSS = """
   tr.king td { background: #3a2a0a; }
   tr.king:hover td { background: #46330f; }
   body.king-only tr.clickable:not(.king) { display: none; }
+  .cat-tag { font-size: 10px; font-weight: normal; color: #8b93a7;
+             border: 1px solid #2a3247; border-radius: 4px; padding: 1px 5px; }
+  tr.cat-noncrypto td.sym { color: #aab2c5; }
+  body.only-crypto tr.clickable:not(.cat-crypto) { display: none; }
+  body.only-noncrypto tr.clickable:not(.cat-noncrypto) { display: none; }
+  .cat-filter { margin-left: 8px; color: #8b93a7; vertical-align: middle; }
   .rs-strong { color: #2ecc71; font-weight: 600; }
   .rs-mid { color: #d9b64a; }
   .rs-weak { color: #ff5c5c; }
@@ -467,9 +487,21 @@ function toggleKing() {
   if (btn) { btn.classList.toggle('active', on); btn.textContent = on ? '只看动量王 ✓' : '只看动量王'; }
   try { localStorage.setItem('okx_king_only', on ? '1' : '0'); } catch (e) {}
 }
+function setCat(mode) {
+  var map = {all: null, crypto: 'only-crypto', noncrypto: 'only-noncrypto'};
+  document.body.classList.remove('only-crypto', 'only-noncrypto');
+  if (map[mode]) document.body.classList.add(map[mode]);
+  var ids = {all: 'catAllBtn', crypto: 'catCryptoBtn', noncrypto: 'catNoncryptoBtn'};
+  for (var k in ids) {
+    var b = document.getElementById(ids[k]);
+    if (b) b.classList.toggle('active', k === mode);
+  }
+  try { localStorage.setItem('okx_cat', mode); } catch (e) {}
+}
 try {
   var _t = parseInt(localStorage.getItem('okx_tab') || '0', 10);
   show(_t);
+  setCat(localStorage.getItem('okx_cat') || 'all');
   if (localStorage.getItem('okx_strong_only') === '1') {
     document.body.classList.add('strong-only');
     var _b = document.getElementById('toggleStrongBtn');
@@ -533,7 +565,12 @@ def render_html(ledger: dict) -> str:
   <h1>山寨启动信号看板</h1>
   <div class="sub">OKX USDT 永续 · 15m波动放大(TR&gt;2×ATR14, 之前波动&lt;1.5%) · 24h成交额≥4000万 USDT · 绿色行=RS≥0.7强势 · 金色行=🔥动量王(RS≥0.7且corr≤0.3) · 每60秒自动刷新 · 数据更新 {updated}
   <button id="toggleStrongBtn" class="toggle-strong" onclick="toggleStrong()">只看强势</button>
-  <button id="toggleKingBtn" class="toggle-strong" onclick="toggleKing()">只看动量王</button></div>
+  <button id="toggleKingBtn" class="toggle-strong" onclick="toggleKing()">只看动量王</button>
+  <span class="cat-filter">类型
+    <button id="catAllBtn" class="toggle-strong active" onclick="setCat('all')">全部</button>
+    <button id="catCryptoBtn" class="toggle-strong" onclick="setCat('crypto')">crypto</button>
+    <button id="catNoncryptoBtn" class="toggle-strong" onclick="setCat('noncrypto')">非crypto</button>
+  </span></div>
 </header>
 {stats}
 {tabs}

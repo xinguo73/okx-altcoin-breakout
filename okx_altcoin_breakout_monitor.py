@@ -28,7 +28,7 @@ import requests
 
 # 让脚本无论从哪个 cwd 运行都能 import 同目录的 ledger 模块
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from ledger import append_signal  # noqa: E402
+from ledger import append_signal, fetch_instrument_categories, category_label  # noqa: E402
 
 TICKERS_URL = "https://www.okx.com/api/v5/market/tickers"
 CANDLES_URL = "https://www.okx.com/api/v5/market/candles"
@@ -213,7 +213,13 @@ def is_momentum_king(rs: float | None, corr: float | None) -> bool:
 
 def format_signal(sig: dict) -> str:
     sym = sig["base"]
-    tag = "🔥动量王 " if is_momentum_king(sig.get("rs"), sig.get("corr")) else ""
+    tags = []
+    if is_momentum_king(sig.get("rs"), sig.get("corr")):
+        tags.append("🔥动量王")
+    cat = sig.get("category") or ""
+    if cat != "1":
+        tags.append(category_label(cat))
+    tag = (" ".join(tags) + " ") if tags else ""
     lines = [f"【启动信号，ATR放大】{tag}{sym}"]
     lines.append(f"现价 {fmt_num(sig['last'])} USDT（24h {sig['chg_24h'] * 100:+.2f}%）")
     lines.append(f"ATR放大 {sig['atr_ratio']:.2f}× · 之前波动 {sig['atr_pct']:.2f}%")
@@ -243,6 +249,9 @@ def main() -> int:
     now = datetime.now(CST)
     cst_time = now.strftime("%m-%d %H:%M")
 
+    # 品种分类（crypto vs 代币化股票/商品），用于飞书信号标类型 + 台账存 category
+    cat_map = fetch_instrument_categories()
+
     candidates = []
     for t in tickers:
         inst = t.get("instId") or ""
@@ -264,7 +273,8 @@ def main() -> int:
         if vol_usdt < MIN_VOL_USDT:
             continue
         candidates.append({"inst_id": inst, "base": base, "vol_usdt": vol_usdt,
-                           "last": last, "open24h": open24h})
+                           "last": last, "open24h": open24h,
+                           "category": cat_map.get(base, "")})
 
     # BTC 5m 基准（相对强度对比）
     try:
@@ -339,6 +349,7 @@ def main() -> int:
             "rs_btc_down": rs_btc_down,
             "rs_coin_held": rs_coin_held,
             "corr": corr_val,
+            "category": c.get("category", ""),
             "cst_time": cst_time,
         }
         print(format_signal(sig))
@@ -358,6 +369,7 @@ def main() -> int:
             "atr_pct": atr_pct,
             "rs": rs_val,
             "corr": corr_val,
+            "category": c.get("category", ""),
         })
 
     return 0
